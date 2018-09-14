@@ -1,12 +1,13 @@
 # MarvAmBass/fauxmo
 
-Hi there, this is my personal fork of `makermusings/fauxmo`. I started to work on it since the original fauxmo has troubles with my Amazon Echo Plus.
+Hi there, this is my personal fork of `makermusings/fauxmo`. I started to work on it since the original fauxmo had troubles with my Amazon Echo Plus.
 
 To get this done I used informations from https://github.com/angel2004/fauxmo and also the much more sophisticated fork/rewrite https://github.com/n8henrie/fauxmo.
 
 If you look for a very heavy fauxmo version look at: https://github.com/n8henrie/fauxmo
 
-For my taste it was to heavy weight and requires the latest version of python3, which by the time of writing was not available as official image for `debian:stretch`. So I used the opportunity to keep `makermusings` tiny version alive and made my changes.
+For my taste it was to heavy weight and requires the latest version of python3, which by the time of writing was not available as official package for `debian:stretch`.
+So I used the opportunity to keep `makermusings` tiny version alive and made my updates.
 
 ## Features
 
