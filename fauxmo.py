@@ -27,7 +27,6 @@ THE SOFTWARE.
 # For a complete discussion, see http://www.makermusings.com
 
 import email.utils
-import requests
 import select
 import socket
 import struct
@@ -36,11 +35,13 @@ import time
 import urllib
 import uuid
 
+import requests
+import subprocess
 
 
 # This XML is the minimum needed to define one of our virtual switches
 # to the Amazon Echo
-
+# working with Alexa Amazon Echo (2nd generation)
 SETUP_XML = """<?xml version="1.0"?>
 <root>
   <device>
@@ -50,11 +51,56 @@ SETUP_XML = """<?xml version="1.0"?>
     <modelName>Emulated Socket</modelName>
     <modelNumber>3.1415</modelNumber>
     <UDN>uuid:Socket-1_0-%(device_serial)s</UDN>
+	<serialNumber>221517K0101769</serialNumber>
+    <binaryState>0</binaryState>
+            <serviceList>
+              <service>
+                  <serviceType>urn:Belkin:service:basicevent:1</serviceType>
+                  <serviceId>urn:Belkin:serviceId:basicevent1</serviceId>
+                  <controlURL>/upnp/control/basicevent1</controlURL>
+                  <eventSubURL>/upnp/event/basicevent1</eventSubURL>
+                  <SCPDURL>/eventservice.xml</SCPDURL>
+              </service>
+          </serviceList>
   </device>
 </root>
 """
 
-
+eventservice_xml = """<?scpd xmlns="urn:Belkin:service-1-0"?>
+        <actionList>
+          <action>
+            <name>SetBinaryState</name>
+            <argumentList>
+              <argument>
+                <retval/>
+                <name>BinaryState</name>
+                <relatedStateVariable>BinaryState</relatedStateVariable>
+                <direction>in</direction>
+              </argument>
+            </argumentList>
+             <serviceStateTable>
+              <stateVariable sendEvents="yes">
+                <name>BinaryState</name>
+                <dataType>Boolean</dataType>
+                <defaultValue>0</defaultValue>
+              </stateVariable>
+              <stateVariable sendEvents="yes">
+                <name>level</name>
+                <dataType>string</dataType>
+                <defaultValue>0</defaultValue>
+              </stateVariable>
+            </serviceStateTable>
+          </action>
+        </scpd>
+"""
+GetBinaryState_soap = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:GetBinaryStateResponse xmlns:u="urn:Belkin:service:basicevent:1">
+      <BinaryState>%(state_realy)s</BinaryState>
+    </u:GetBinaryStateResponse>
+  </s:Body>
+</s:Envelope>
+"""
 DEBUG = False
 
 def dbg(msg):
@@ -102,7 +148,7 @@ class poller:
             target = self.targets.get(one_ready[0], None)
             if target:
                 target.do_read(one_ready[0])
- 
+
 
 # Base class for a generic UPnP device. This is far from complete
 # but it supports either specified or automatic IP address and port
@@ -123,7 +169,7 @@ class upnp_device(object):
             del(temp_socket)
             dbg("got local address of %s" % upnp_device.this_host_ip)
         return upnp_device.this_host_ip
-        
+
 
     def __init__(self, listener, poller, port, root_url, server_version, persistent_uuid, other_headers = None, ip_address = None):
         self.listener = listener
@@ -170,7 +216,7 @@ class upnp_device(object):
 
     def get_name(self):
         return "unknown"
-        
+
     def respond_to_search(self, destination, search_target):
         dbg("Responding to search for %s" % self.get_name())
         date_str = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
@@ -191,11 +237,12 @@ class upnp_device(object):
         message += "\r\n"
         temp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         temp_socket.sendto(message, destination)
- 
+
 
 # This subclass does the bulk of the work to mimic a WeMo switch on the network.
 
 class fauxmo(upnp_device):
+    relayState=0
     @staticmethod
     def make_uuid(name):
         return ''.join(["%x" % sum([ord(c) for c in name])] + ["%x" % ord(c) for c in "%sfauxmo!" % name])[:14]
@@ -217,7 +264,37 @@ class fauxmo(upnp_device):
         return self.name
 
     def handle_request(self, data, sender, socket):
-        if data.find('GET /setup.xml HTTP/1.1') == 0:
+        if data.find('POST /upnp/control/basicevent1 HTTP/1.1') == 0 and data.find("urn:Belkin:service:basicevent:1#GetBinaryState") != -1:
+                state =self.getState()
+                #dbg(state)
+                soap = GetBinaryState_soap % {'state_realy' : state}
+                date_str = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
+                message = ("HTTP/1.1 200 OK\r\n"
+                           "CONTENT-LENGTH: %d\r\n"
+                           "CONTENT-TYPE: text/xml charset=\"utf-8\"\r\n"
+                           "DATE: %s\r\n"
+                           "EXT:\r\n"
+                           "SERVER: Unspecified, UPnP/1.0, Unspecified\r\n"
+                           "X-User-Agent: redsonic\r\n"
+                           "CONNECTION: close\r\n"
+                           "\r\n"
+                           "%s" % (len(soap), date_str, soap))
+                socket.send(message)
+        elif data.find('GET /eventservice.xml HTTP/1.1') == 0:
+         dbg("Responding to eventservice.xml for %s" % self.name)
+         date_str = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
+         messageEvent=("HTTP/1.1 200 OK\r\n"
+                       "CONTENT-LENGTH: %d\r\n"
+                       "CONTENT-TYPE: text/xml\r\n"
+                       "DATE: %s\r\n"
+                       "LAST-MODIFIED: Sat, 01 Jan 2000 00:01:15 GMT\r\n"
+                       "SERVER: Unspecified, UPnP/1.0, Unspecified\r\n"
+                       "X-User-Agent: redsonic\r\n"
+                       "CONNECTION: close\r\n"
+                       "\r\n"
+                       "%s" % (len(eventservice_xml), date_str, eventservice_xml))
+         socket.send(messageEvent)
+        elif data.find('GET /setup.xml HTTP/1.1') == 0:
             dbg("Responding to setup.xml for %s" % self.name)
             xml = SETUP_XML % {'device_name' : self.name, 'device_serial' : self.serial}
             date_str = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
@@ -237,11 +314,13 @@ class fauxmo(upnp_device):
             if data.find('<BinaryState>1</BinaryState>') != -1:
                 # on
                 dbg("Responding to ON for %s" % self.name)
-                success = self.action_handler.on()
+                success=self.action_handler.on();
+                self.relayState=1
             elif data.find('<BinaryState>0</BinaryState>') != -1:
                 # off
                 dbg("Responding to OFF for %s" % self.name)
-                success = self.action_handler.off()
+                success=self.action_handler.off();
+                self.relayState=0
             else:
                 dbg("Unknown Binary State request:")
                 dbg(data)
@@ -270,6 +349,8 @@ class fauxmo(upnp_device):
     def off(self):
         return True
 
+    def getState(self):
+        return self.relayState
 
 # Since we have a single process managing several virtual UPnP devices,
 # we only need a single listener for UPnP broadcasts. When a matching
@@ -282,6 +363,7 @@ class fauxmo(upnp_device):
 
 class upnp_broadcast_responder(object):
     TIMEOUT = 0
+    inprogress=False
 
     def __init__(self):
         self.devices = []
@@ -322,24 +404,27 @@ class upnp_broadcast_responder(object):
     def do_read(self, fileno):
         data, sender = self.recvfrom(1024)
         if data:
-          
-            if data.find('M-SEARCH') == 0 and data.find('urn:Belkin:device:**') != -1:
-                for device in self.devices:
-                    time.sleep(0.1)
-                    device.respond_to_search(sender, 'urn:Belkin:device:**')
-                    
-            elif data.find('M-SEARCH') == 0 and data.find('upnp:rootdevice') != -1:
-                for device in self.devices:
-                    time.sleep(0.1)
-                    device.respond_to_search(sender, 'upnp:rootdevice')
-                    
-            elif data.find('M-SEARCH') == 0 and data.find('ssdp:all') != -1:
-                for device in self.devices:
-                    time.sleep(0.1)
-                    device.respond_to_search(sender, 'ssdp:all')
-                    
-            else:
-                pass
+            if data.find('M-SEARCH') == 0 and self.inprogress == False:
+                if data.find('urn:Belkin:device:**') != -1:
+                    for device in self.devices:
+                        time.sleep(0.1)
+                        device.respond_to_search(sender, 'urn:Belkin:device:**')
+                        self.inprogress=True
+
+                elif data.find('M-SEARCH') == 0 and data.find('upnp:rootdevice') != -1:
+                    for device in self.devices:
+                        time.sleep(0.1)
+                        device.respond_to_search(sender, 'upnp:rootdevice')
+                        self.inprogress=True
+
+                elif data.find('M-SEARCH') == 0 and data.find('ssdp:all') != -1:
+                    for device in self.devices:
+                        time.sleep(0.1)
+                        device.respond_to_search(sender, 'ssdp:all')
+                        self.inprogress=True
+
+                else:
+                    pass
 
     #Receive network data
     def recvfrom(self,size):
@@ -384,6 +469,22 @@ class rest_api_handler(object):
         r = requests.get(self.off_cmd)
         return r.status_code == 200
 
+class cmd_handler(object):
+    def __init__(self, on_cmd, off_cmd):
+        self.on_cmd = on_cmd
+        self.off_cmd = off_cmd
+
+    def run_cmd_fast(self, cmd):
+        subprocess.Popen(cmd, shell=True, stdin=None, stdout=None, stderr=None, close_fds=True)
+
+    def on(self):
+        run_cmd_fast(self.on_cmd)
+        return True
+
+    def off(self):
+        run_cmd_fast(self.off_cmd)
+        return True
+
 
 # Each entry is a list with the following elements:
 #
@@ -398,6 +499,7 @@ class rest_api_handler(object):
 FAUXMOS = [
     ['office lights', rest_api_handler('http://192.168.5.4/ha-api?cmd=on&a=office', 'http://192.168.5.4/ha-api?cmd=off&a=office')],
     ['kitchen lights', rest_api_handler('http://192.168.5.4/ha-api?cmd=on&a=kitchen', 'http://192.168.5.4/ha-api?cmd=off&a=kitchen')],
+    ['apache', cmd_handler('sh -c "service apache2 start"', 'sh -c "service apache2 stop"')],
 ]
 
 
@@ -432,4 +534,3 @@ while True:
     except Exception, e:
         dbg(e)
         break
-

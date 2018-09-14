@@ -1,3 +1,25 @@
+# MarvAmBass/fauxmo
+
+Hi there, this is my personal fork of `makermusings/fauxmo`. I started to work on it since the original fauxmo has troubles with my Amazon Echo Plus.
+
+To get this done I used informations from https://github.com/angel2004/fauxmo and also the much more sophisticated fork/rewrite https://github.com/n8henrie/fauxmo.
+
+If you look for a very heavy fauxmo version look at: https://github.com/n8henrie/fauxmo
+
+For my taste it was to heavy weight and requires the latest version of python3, which by the time of writing was not available as official image for `debian:stretch`. So I used the opportunity to keep `makermusings` tiny version alive and made my changes.
+
+## Features
+
+- Amazon Echo 2 support (inherited from angel2004)
+- Support for multiple Wemo Clients (inherited from n8henrie)
+- Still works with python 2.7
+- Just one single file
+- Handlers
+    - rest_api_handler
+    - cmd_handler
+
+_If you have some lightweight enhancements, I'm happy to merge them :)_
+
 # fauxmo
 **Emulated Belkin WeMo devices that work with the Amazon Echo**
 
@@ -6,8 +28,8 @@ the Amazon Echo with your own home automation.
 
 ### Summary
 
-The Amazon Echo will allow you to control a limited number of home automation devices 
-by voice. If you want to control device types that it doesn't know about, or perform 
+The Amazon Echo will allow you to control a limited number of home automation devices
+by voice. If you want to control device types that it doesn't know about, or perform
 more sophisticated actions, the Echo doesn't provide any native options. This code
 emulates the Belkin WeMo devices in software, allowing you to have it appear that
 any number of them are on your network and to link their on and off actions to
